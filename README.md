@@ -8,7 +8,7 @@
 #include <time.h>
 #include <string.h>
 
-#define MAX_CALL_DURATION 200
+#define MAX_CALL_DURATION 300
 #define MAX_AGENT_COUNT 5
 #define MAX_CALLER_NAME 50
 #define MAX_PHONE_NUMBER 15
@@ -49,13 +49,15 @@ typedef struct
     int total_time_spent;
     char current_caller[MAX_CALLER_NAME];
 } Agent;
-
 void assignCall();
+
 Agent* agents;
 int agent_count;
 Queue callQueue = {NULL, NULL};
 int call_id_counter = 1;
 pthread_mutex_t queue_lock;
+
+// Improved call creation with caller details
 Call* createCall(Priority priority, int duration, const char* caller_name, const char* phone_number)
 {
     Call* newCall = (Call*)malloc(sizeof(Call));
@@ -72,6 +74,7 @@ Call* createCall(Priority priority, int duration, const char* caller_name, const
 void enqueue(Call* newCall)
 {
     pthread_mutex_lock(&queue_lock);
+
     if (!callQueue.front || newCall->priority < callQueue.front->priority)
     {
         newCall->next = callQueue.front;
@@ -87,6 +90,7 @@ void enqueue(Call* newCall)
         temp->next = newCall;
         if (!newCall->next) callQueue.rear = newCall;
     }
+
     pthread_mutex_unlock(&queue_lock);
 }
 
@@ -110,17 +114,21 @@ void* handleCall(void* arg)
     int agent_id = (int)arg;
     free(arg);
     Call* call = dequeue();
+
     if (!call)
     {
         agents[agent_id].busy = false;
         return NULL;
     }
+
     agents[agent_id].busy = true;
     agents[agent_id].current_call_id = call->id;
     strncpy(agents[agent_id].current_caller, call->caller_name, MAX_CALLER_NAME);
+
     printf("\nAgent %d handling Call ID %d\n", agents[agent_id].id, call->id);
     printf("Caller: %s (%s)\n", call->caller_name, call->phone_number);
     printf("Priority: %d, Duration: %d seconds\n", call->priority, call->duration);
+
     time_t start_time = time(NULL);
     while ((time(NULL) - start_time) < call->duration)
     {
@@ -132,14 +140,18 @@ void* handleCall(void* arg)
         }
         sleep(1);
     }
+
     agents[agent_id].total_calls_handled++;
     agents[agent_id].total_time_spent += call->duration;
+
     printf("\nCall ID %d completed by Agent %d\n", call->id, agents[agent_id].id);
     printf("Call Duration: %ld seconds\n", time(NULL) - call->start_time);
+
     free(call);
     agents[agent_id].busy = false;
     agents[agent_id].current_call_id = -1;
     agents[agent_id].current_caller[0] = '\0';
+
     assignCall();
     return NULL;
 }
@@ -170,6 +182,7 @@ void releaseAgent(int agent_id)
         return;
     }
     agent_id--;
+
     if (agents[agent_id].busy)
     {
         printf("Agent %d released from Call ID %d\n", agents[agent_id].id, agents[agent_id].current_call_id);
@@ -192,11 +205,11 @@ void displayQueue()
     else
     {
         printf("\nCurrent Call Queue:\n");
-        printf("ID\t\tPriority\t\tCaller\t\tPhone\t\tDuration\n");
+        printf("ID\tPriority\tCaller\t\tPhone\t\tDuration\n");
         Call* temp = callQueue.front;
         while (temp)
         {
-            printf("%d\t\t%d\t\t\t%s\t\t%s\t%d\n",
+            printf("%d\t%d\t\t%s\t%s\t%d\n",
                    temp->id, temp->priority, temp->caller_name,
                    temp->phone_number, temp->duration);
             temp = temp->next;
@@ -215,6 +228,7 @@ void displayAgentStatus()
         printf("%d\t%s\t",
                agents[i].id,
                agents[i].busy ? "Busy" : "Available");
+
         if (agents[i].busy)
         {
             printf("%d\t\t%s", agents[i].current_call_id, agents[i].current_caller);
@@ -223,6 +237,7 @@ void displayAgentStatus()
         {
             printf("-\t\t-");
         }
+
         printf("\t%d\t\t%d sec\n",
                agents[i].total_calls_handled,
                agents[i].total_time_spent);
@@ -238,16 +253,21 @@ void saveData()
         perror("Error saving data");
         return;
     }
+
+    // Save call queue
     Call* temp = callQueue.front;
     while (temp)
     {
         fwrite(temp, sizeof(Call), 1, fp);
         temp = temp->next;
     }
+
+    // Save agents data
     for (int i = 0; i < agent_count; i++)
     {
         fwrite(&agents[i], sizeof(Agent), 1, fp);
     }
+
     fclose(fp);
     printf("Data saved successfully!\n");
 }
@@ -260,6 +280,8 @@ void loadData()
         printf("No previous data found\n");
         return;
     }
+
+    // Clear existing queue
     while (callQueue.front)
     {
         Call* temp = callQueue.front;
@@ -267,6 +289,8 @@ void loadData()
         free(temp);
     }
     callQueue.rear = NULL;
+
+    // Load call queue
     Call call;
     while (fread(&call, sizeof(Call), 1, fp) == 1)
     {
@@ -275,10 +299,13 @@ void loadData()
         newCall->start_time = call.start_time;
         enqueue(newCall);
     }
+
+    // Load agents data
     for (int i = 0; i < agent_count; i++)
     {
         fread(&agents[i], sizeof(Agent), 1, fp);
     }
+
     fclose(fp);
     printf("Data loaded successfully!\n");
 }
@@ -286,9 +313,11 @@ void loadData()
 int main()
 {
     pthread_mutex_init(&queue_lock, NULL);
+
     printf("Enter the number of agents (max %d): ", MAX_AGENT_COUNT);
     scanf("%d", &agent_count);
     if (agent_count > MAX_AGENT_COUNT) agent_count = MAX_AGENT_COUNT;
+
     agents = (Agent*)malloc(agent_count * sizeof(Agent));
     for (int i = 0; i < agent_count; i++)
     {
@@ -299,10 +328,13 @@ int main()
         agents[i].total_time_spent = 0;
         agents[i].current_caller[0] = '\0';
     }
+
     loadData();
+
     int choice, priority, duration, agent_id;
     char caller_name[MAX_CALLER_NAME];
     char phone_number[MAX_PHONE_NUMBER];
+
     while (1)
     {
         printf("\nCall Center Simulation:\n");
@@ -315,6 +347,7 @@ int main()
         printf("7. Exit\n");
         printf("Enter choice: ");
         scanf("%d", &choice);
+
         switch (choice)
         {
         case 1:
@@ -352,7 +385,7 @@ int main()
             free(agents);
             return 0;
         default:
-            printf("Invalid choice!\n");
-        }
+            printf("Invalid choice!\n");     
+        }  
     }
 }
